@@ -1,7 +1,6 @@
 import pandas as pd
 import re
 import os
-import glob
 import time
 import json
 from pathlib import Path
@@ -15,6 +14,7 @@ TRANSCRIPT_FOLDER = Path("./transcripts")
 EXCEL_FILE = "Lösungen.xlsx"
 OUTPUT_FILE = "Auswertung_Ergebnisse.xlsx"
 SCORING_MODE = "fuzzy"
+# Toleranz: 0.75 erlaubt auch Buchstabendreher (z.B. Schbielplatz)
 FUZZY_THRESHOLD = 0.75 
 
 # ==========================================
@@ -35,146 +35,85 @@ def clean_text(text):
     if not isinstance(text, str):
         return ""
     text = text.lower().strip()
-    # Erlaubt a-z, 0-9 und äöüß. Alles andere (Punkt, Komma) fliegt raus.
-    text = re.sub(r'[^\w\säöüß]', '', text, flags=re.IGNORECASE)
+    # WICHTIG: ß zu ss machen, damit Bus/Buß erkannt wird
+    text = text.replace("ß", "ss")
+    # Erlaubt a-z, 0-9 und äöü. Alles andere (Punkt, Komma) fliegt raus.
+    text = re.sub(r'[^\w\säöü]', '', text, flags=re.IGNORECASE)
     # Doppelte Leerzeichen reduzieren
     text = ' '.join(text.split())
     return text
 
-def extract_keywords_from_text(text, min_length=3):
-    """Extrahiert alle Wörter aus dem Text für Keyword-Suche."""
-    words = re.findall(r'\b[\wäöüßÄÖÜ-]+\b', text.lower())
-    # Filtere sehr kurze Wörter (falls gewünscht)
-    return [w for w in words if len(w) >= min_length]
-
 def find_best_match(target, actual, mode):
     """
-    Findet das beste Matching zwischen Target-Keyword und Wörtern im Text.
-    Gibt zurück: (gefundenes_wort, ähnlichkeit, punkte)
+    Sucht das beste Wort im Satz und gibt das ORIGINAL-Wort zurück.
     """
     t_clean = clean_text(target)
-    a_clean = clean_text(actual)
     
-    # Falls kein Text gefunden wurde
-    if not a_clean or a_clean in ["[nicht gefunden]", "[datei nicht lesbar]", "[datei fehlt]"]:
+    # Wir splitten den Original-Text, damit wir das Original-Wort zurückgeben können
+    actual_words_orig = actual.split()
+    
+    if not actual_words_orig:
         return None, 0, 0
-    
-    # Wörter aus dem tatsächlichen Text extrahieren
-    actual_words = extract_keywords_from_text(a_clean)
-    
-    # MODUS: strict
-    if mode == "strict":
-        if t_clean in actual_words:
-            return t_clean, 100, 1
-        else:
-            return None, 0, 0
-    
-    # MODUS: contains
-    elif mode == "contains":
-        # Prüfe ob Keyword in einem der Wörter enthalten ist
-        for word in actual_words:
-            if t_clean in word:
-                # Berechne Ähnlichkeit basierend auf Längenverhältnis
-                similarity = len(t_clean) / len(word) * 100
-                return word, similarity, 1
-        return None, 0, 0
-    
-    # MODUS: fuzzy (EMPFEHLENSWERT)
-    elif mode == "fuzzy":
-        # Für den Fall, dass der Text sehr kurz ist (nur ein Wort)
-        if len(actual_words) == 1 and len(actual_words[0]) <= 10:
-            word = actual_words[0]
-            similarity = SequenceMatcher(None, t_clean, word).ratio()
-            points = 1 if similarity >= FUZZY_THRESHOLD else 0
-            return word, similarity * 100, points
-        
-        # Levenshtein-Distanz für jedes Wort berechnen
-        best_match = None
-        best_similarity = 0
-        
-        for word in actual_words:
-            similarity = SequenceMatcher(None, t_clean, word).ratio()
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match = word
-        
-        # Punkte basierend auf Schwellenwert berechnen
-        points = 1 if best_similarity >= FUZZY_THRESHOLD else 0
-        
-        # Spezialfall: Sehr kurze Wörter (<= 3 Buchstaben)
-        if len(t_clean) <= 3:
-            # Für kurze Wörter strenger
-            if t_clean in a_clean:  # Direkt im Text suchen (nicht nur in Wörtern)
-                points = 1
-                best_similarity = 1.0
-                best_match = t_clean
-            elif best_similarity >= 0.9:  # Höherer Schwellenwert für kurze Wörter
-                points = 1
-            else:
-                points = 0
-        
-        return best_match, best_similarity * 100, points
-    
-    return None, 0, 0
 
-def calculate_score(target, actual, mode):
-    """Vergibt Punkte basierend auf dem Modus."""
-    best_match, similarity, points = find_best_match(target, actual, mode)
+    best_match_word = None
+    best_similarity = 0.0
     
-    # Formatiere Ausgabe für "Ist (Gladia)" Spalte
-    if best_match:
-        if similarity >= 100:
-            ist_display = best_match
-        elif similarity >= 85:
-            ist_display = f"{best_match} ({similarity:.0f}%)"
+    # Jedes Wort im Satz prüfen
+    for w_orig in actual_words_orig:
+        w_clean = clean_text(w_orig)
+        
+        current_sim = 0.0
+        
+        if mode == "strict":
+            current_sim = 100.0 if t_clean == w_clean else 0.0
+        elif mode == "contains":
+            current_sim = 100.0 if t_clean in w_clean else 0.0
+        elif mode == "fuzzy":
+            if t_clean in w_clean:
+                current_sim = 100.0
+            else:
+                current_sim = SequenceMatcher(None, t_clean, w_clean).ratio() * 100
+        
+        if current_sim > best_similarity:
+            best_similarity = current_sim
+            best_match_word = w_orig 
+
+    # Punkte vergeben?
+    points = 0
+    if best_similarity >= (FUZZY_THRESHOLD * 100):
+        points = 1
+    
+    # Spezialfall kurze Wörter (<= 3 Zeichen)
+    if len(t_clean) <= 3:
+        if best_similarity < 85: 
+             points = 0
         else:
-            ist_display = f"[{best_match}] ({similarity:.0f}%)"
-    else:
-        ist_display = "[NICHT GEFUNDEN]"
-    
-    return points, similarity, ist_display
+             points = 1
+
+    return best_match_word, best_similarity, points
 
 def extract_from_json(content):
-    """Holt den reinen Text aus dem Gladia-JSON."""
+    """Holt den reinen Text aus dem Gladia-JSON (Robust)."""
     try:
         data = json.loads(content)
-        
-        # Zuerst: Volles Transkript direkt suchen (falls Struktur flach)
-        if isinstance(data, dict) and "full_transcript" in data:
-            return data["full_transcript"]
-        
-        # Gladia-Standard: unter "transcription"
-        transcription = data.get("transcription", {})
-        
-        if isinstance(transcription, dict):
-            # Fall 1: Volles Transkript vorhanden
-            if "full_transcript" in transcription:
-                return transcription["full_transcript"]
-            
-            # Fall 2: Utterances zusammenbauen
-            elif "utterances" in transcription and isinstance(transcription["utterances"], list):
-                utterances = transcription["utterances"]
-                # Sicherstellen, dass es Strings sind
-                return " ".join([str(u.get("text", "")) for u in utterances])
-        
-        # Fall 3: Falls das JSON unerwartet nur ein String ist
-        if isinstance(data, str):
-            return data
-            
-        # Fall 4: Notfall - gib den gesamten Inhalt als String zurück
-        return str(data)
-        
-    except json.JSONDecodeError:
-        return content  # War wohl doch kein JSON, gib Text zurück
-    except Exception:
-        return content  # Bei anderen Fehlern: Text zurückgeben
+        def find_text_in_obj(obj):
+            if isinstance(obj, dict):
+                if "full_transcript" in obj and obj["full_transcript"]: return obj["full_transcript"]
+                if "text" in obj and isinstance(obj["text"], str): return obj["text"]
+                if "transcription" in obj: return find_text_in_obj(obj["transcription"])
+                if "result" in obj: return find_text_in_obj(obj["result"])
+                if "utterances" in obj and isinstance(obj["utterances"], list):
+                    return " ".join([str(u.get("text", "")) for u in obj["utterances"]])
+            return None
+        result = find_text_in_obj(data)
+        return result if result else ""
+    except:
+        return content
 
 def get_file_content(filepath):
     """Liest Datei (txt/json) und behandelt Encoding-Probleme."""
     content = ""
     success = False
-
-    # 1. Datei roh einlesen (Encoding-Fallback)
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read().strip()
@@ -186,13 +125,9 @@ def get_file_content(filepath):
                 success = True
         except:
             return "[DATEI NICHT LESBAR]", False
-    except FileNotFoundError:
-        return "[DATEI FEHLT]", False
 
-    # 2. Falls JSON -> Parsen
     if success and filepath.suffix.lower() == '.json':
         content = extract_from_json(content)
-
     return content, success
 
 # ==========================================
@@ -203,119 +138,93 @@ def main():
     start_time = time.time()
     print_banner()
     
-    # --- SCHRITT 1: Excel laden (mit Fehlerschutz) ---
     if not os.path.exists(EXCEL_FILE):
-        print(f" FEHLER: Die Datei '{EXCEL_FILE}' wurde nicht gefunden!")
-        print("  Bitte erstelle die Excel-Datei im gleichen Ordner.")
-        input("\nDrücke ENTER zum Beenden...")
+        print(f" FEHLER: Datei '{EXCEL_FILE}' nicht gefunden!")
+        input("\nDrücke ENTER...")
         return
 
     try:
         df = pd.read_excel(EXCEL_FILE)
-        # Spalten normalisieren
-        if len(df.columns) < 2:
-            raise ValueError("Die Excel-Datei braucht mindestens 2 Spalten!")
-        
+        if len(df.columns) < 2: raise ValueError("Zu wenige Spalten")
         df.columns.values[0] = "Dateiname"
         df.columns.values[1] = "Soll_Text"
-        
-    except PermissionError:
-        print(f" FEHLER: Zugriff verweigert!")
-        print(f"   Ist die Datei '{EXCEL_FILE}' vielleicht noch in Excel geöffnet?")
-        print("   -> Bitte Excel schließen und nochmal versuchen.")
-        input("\nDrücke ENTER zum Beenden...")
-        return
     except Exception as e:
-        print(f" Kritisches Problem mit der Excel-Datei: {e}")
-        input("\nDrücke ENTER zum Beenden...")
+        print(f" Fehler Excel: {e}")
+        input("\nDrücke ENTER...")
         return
 
-    # --- SCHRITT 2: Auswertung ---
     results = []
-    total_rows = len(df)
-    print(f" Starte Auswertung für {total_rows} Einträge...\n")
+    print(f" Starte Auswertung für {len(df)} Einträge...\n")
 
     for index, row in df.iterrows():
-        # Kleiner Fortschritts-Indikator
-        if index % 50 == 0 and index > 0:
-            print(f"   ... verarbeite Zeile {index} von {total_rows}")
-
         raw_filename = str(row["Dateiname"]).strip()
-        target_text = str(row["Soll_Text"]).strip()
         
-        # Dateinamen ohne Endung holen (z.B. "Audio1.wav" -> "Audio1")
+        if raw_filename.startswith("_"):
+            continue
+
+        raw_target = row["Soll_Text"]
+        if pd.isna(raw_target) or str(raw_target).strip().lower() == "nan":
+            target = ""
+        else:
+            target = str(raw_target).strip()
+
         base_name = Path(raw_filename).stem
-        
-        # Wir suchen flexibel nach .txt oder .json
         found = False
-        actual_text = "[NICHT GEFUNDEN]"
+        actual_raw = "[NICHT GEFUNDEN]"
         
-        potential_files = [
-            TRANSCRIPT_FOLDER / f"{base_name}.json",  # JSON zuerst probieren
-            TRANSCRIPT_FOLDER / f"{base_name}.txt"
-        ]
-        
-        for p in potential_files:
+        for ext in [".json", ".txt"]:
+            p = TRANSCRIPT_FOLDER / (base_name + ext)
             if p.exists():
-                content, success = get_file_content(p)
-                if success:
-                    actual_text = content
-                    found = True
-                    break
+                actual_raw, found = get_file_content(p)
+                if found: break
         
-        # Punkte berechnen (jetzt mit verbesserter Funktion)
-        points, sim, ist_display = calculate_score(target_text, actual_text, SCORING_MODE)
-        
+        # Bewerten
+        ist_display = ""
+        points = 0
+        similarity = 0
+
+        if found and target:
+            match_word, similarity, points = find_best_match(target, actual_raw, SCORING_MODE)
+            
+            if match_word:
+                ist_display = match_word
+            else:
+                ist_display = "-"
+        else:
+            ist_display = "-"
+            points = 0
+            similarity = 0
+
         results.append({
             "Dateiname": raw_filename,
-            "Soll (Excel)": target_text,
-            "Ist (Gladia)": ist_display,
+            "Soll": target,
+            "Ist (Gefundenes Wort)": ist_display,
+            "Transkript (Ganzer Satz)": actual_raw if found else "[FEHLT]",
             "Punkte": points,
-            "Ähnlichkeit (%)": round(sim, 1),
+            "Ähnlichkeit (%)": round(similarity, 1),
             "Status": "OK" if found else "FEHLT"
         })
 
-    # --- SCHRITT 3: Speichern ---
+    # Speichern
     df_result = pd.DataFrame(results)
-    
-    # Statistik
     correct = df_result["Punkte"].sum()
-    quote = (correct / total_rows * 100) if total_rows > 0 else 0
-    duration = time.time() - start_time
+    valid_count = len(df_result[df_result["Soll"] != ""])
+    quote = (correct / valid_count * 100) if valid_count > 0 else 0
     
     print("\n" + "="*30)
     print(f" ERGEBNIS")
-    print(f"   Dateien gesamt:  {total_rows}")
+    print(f"   Dateien gesamt:  {len(results)}")
     print(f"   Punkte vergeben: {correct}")
     print(f"   Trefferquote:    {quote:.1f}%")
-    print(f"   Dauer:           {duration:.2f} Sekunden")
+    print(f"   Dauer:           {time.time() - start_time:.2f} Sek")
     print("="*30)
-    
-    # Detailausgabe
-    print("\nDETAILS:")
-    print("-" * 80)
-    print(f"{'Dateiname':<30} {'Soll':<15} {'Ist':<20} {'Ähnl.':<8} {'Pkt':<4} {'Status':<6}")
-    print("-" * 80)
-    
-    for result in results:
-        print(f"{result['Dateiname']:<30} "
-              f"{result['Soll (Excel)']:<15} "
-              f"{str(result['Ist (Gladia)'])[:20]:<20} "
-              f"{result['Ähnlichkeit (%)']:<8.1f} "
-              f"{result['Punkte']:<4} "
-              f"{result['Status']:<6}")
     
     try:
         df_result.to_excel(OUTPUT_FILE, index=False)
-        print(f"\n Erfolgreich gespeichert in:\n   {OUTPUT_FILE}")
-    except PermissionError:
-        print(f"\n FEHLER beim Speichern!")
-        print(f"   Die Datei '{OUTPUT_FILE}' ist noch geöffnet.")
-        print("   Bitte schließen und Skript neu starten.")
+        print(f"\n Erfolgreich gespeichert in: {OUTPUT_FILE}")
     except Exception as e:
-        print(f"\n Unbekannter Fehler beim Speichern: {e}")
+        print(f"\n Fehler beim Speichern: {e}")
 
-    # WICHTIG für Windows: Fenster offen lassen
     input("\n Fertig. Drücke ENTER zum Schließen...")
 
 if __name__ == "__main__":
