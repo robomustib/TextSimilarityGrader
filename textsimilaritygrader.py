@@ -14,11 +14,8 @@ from difflib import SequenceMatcher
 TRANSCRIPT_FOLDER = Path("./transcripts")
 EXCEL_FILE = "Lösungen.xlsx"
 OUTPUT_FILE = "Auswertung_Ergebnisse.xlsx"
-
-# "fuzzy" = Tippfehler erlaubt (Empfohlen!)
-# "strict" = Muss zu 100% stimmen
 SCORING_MODE = "fuzzy"
-FUZZY_THRESHOLD = 0.85 
+FUZZY_THRESHOLD = 0.75 
 
 # ==========================================
 # 2. HILFSFUNKTIONEN
@@ -44,8 +41,101 @@ def clean_text(text):
     text = ' '.join(text.split())
     return text
 
+def extract_keywords_from_text(text, min_length=3):
+    """Extrahiert alle Wörter aus dem Text für Keyword-Suche."""
+    words = re.findall(r'\b[\wäöüßÄÖÜ-]+\b', text.lower())
+    # Filtere sehr kurze Wörter (falls gewünscht)
+    return [w for w in words if len(w) >= min_length]
+
+def find_best_match(target, actual, mode):
+    """
+    Findet das beste Matching zwischen Target-Keyword und Wörtern im Text.
+    Gibt zurück: (gefundenes_wort, ähnlichkeit, punkte)
+    """
+    t_clean = clean_text(target)
+    a_clean = clean_text(actual)
+    
+    # Falls kein Text gefunden wurde
+    if not a_clean or a_clean in ["[nicht gefunden]", "[datei nicht lesbar]", "[datei fehlt]"]:
+        return None, 0, 0
+    
+    # Wörter aus dem tatsächlichen Text extrahieren
+    actual_words = extract_keywords_from_text(a_clean)
+    
+    # MODUS: strict
+    if mode == "strict":
+        if t_clean in actual_words:
+            return t_clean, 100, 1
+        else:
+            return None, 0, 0
+    
+    # MODUS: contains
+    elif mode == "contains":
+        # Prüfe ob Keyword in einem der Wörter enthalten ist
+        for word in actual_words:
+            if t_clean in word:
+                # Berechne Ähnlichkeit basierend auf Längenverhältnis
+                similarity = len(t_clean) / len(word) * 100
+                return word, similarity, 1
+        return None, 0, 0
+    
+    # MODUS: fuzzy (EMPFEHLENSWERT)
+    elif mode == "fuzzy":
+        # Für den Fall, dass der Text sehr kurz ist (nur ein Wort)
+        if len(actual_words) == 1 and len(actual_words[0]) <= 10:
+            word = actual_words[0]
+            similarity = SequenceMatcher(None, t_clean, word).ratio()
+            points = 1 if similarity >= FUZZY_THRESHOLD else 0
+            return word, similarity * 100, points
+        
+        # Levenshtein-Distanz für jedes Wort berechnen
+        best_match = None
+        best_similarity = 0
+        
+        for word in actual_words:
+            similarity = SequenceMatcher(None, t_clean, word).ratio()
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = word
+        
+        # Punkte basierend auf Schwellenwert berechnen
+        points = 1 if best_similarity >= FUZZY_THRESHOLD else 0
+        
+        # Spezialfall: Sehr kurze Wörter (<= 3 Buchstaben)
+        if len(t_clean) <= 3:
+            # Für kurze Wörter strenger
+            if t_clean in a_clean:  # Direkt im Text suchen (nicht nur in Wörtern)
+                points = 1
+                best_similarity = 1.0
+                best_match = t_clean
+            elif best_similarity >= 0.9:  # Höherer Schwellenwert für kurze Wörter
+                points = 1
+            else:
+                points = 0
+        
+        return best_match, best_similarity * 100, points
+    
+    return None, 0, 0
+
+def calculate_score(target, actual, mode):
+    """Vergibt Punkte basierend auf dem Modus."""
+    best_match, similarity, points = find_best_match(target, actual, mode)
+    
+    # Formatiere Ausgabe für "Ist (Gladia)" Spalte
+    if best_match:
+        if similarity >= 100:
+            ist_display = best_match
+        elif similarity >= 85:
+            ist_display = f"{best_match} ({similarity:.0f}%)"
+        else:
+            ist_display = f"[{best_match}] ({similarity:.0f}%)"
+    else:
+        ist_display = "[NICHT GEFUNDEN]"
+    
+    return points, similarity, ist_display
+
 def extract_from_json(content):
-    """Holt den reinen Text aus dem Gladia-JSON (Robust)."""
+    """Holt den reinen Text aus dem Gladia-JSON."""
     try:
         data = json.loads(content)
         
@@ -104,34 +194,6 @@ def get_file_content(filepath):
         content = extract_from_json(content)
 
     return content, success
-
-def calculate_score(target, actual, mode):
-    """Vergibt Punkte basierend auf dem Modus."""
-    t_clean = clean_text(target)
-    a_clean = clean_text(actual)
-    
-    # Wie ähnlich sind sich die Texte? (0.0 bis 1.0)
-    similarity = SequenceMatcher(None, t_clean, a_clean).ratio()
-    points = 0
-    
-    if mode == "strict":
-        points = 1 if t_clean == a_clean else 0
-        
-    elif mode == "contains":
-        points = 1 if t_clean in a_clean else 0
-        
-    elif mode == "fuzzy":
-        # SPEZIAL-LOGIK:
-        # Wenn das Lösungswort sehr kurz ist (<= 4 Buchstaben, z.B. "Eis"),
-        # ist Fuzzy gefährlich (verwechselt "Eis" mit "Ein").
-        # Da nutzen wir lieber 'contains'.
-        if len(t_clean) <= 4:
-            points = 1 if t_clean in a_clean else 0
-        else:
-            # Sonst: Fuzzy Matching (erlaubt Tippfehler)
-            points = 1 if similarity >= FUZZY_THRESHOLD or t_clean in a_clean else 0
-            
-    return points, similarity
 
 # ==========================================
 # 3. HAUPT-PROGRAMM
@@ -201,15 +263,15 @@ def main():
                     found = True
                     break
         
-        # Punkte berechnen
-        points, sim = calculate_score(target_text, actual_text, SCORING_MODE)
+        # Punkte berechnen (jetzt mit verbesserter Funktion)
+        points, sim, ist_display = calculate_score(target_text, actual_text, SCORING_MODE)
         
         results.append({
             "Dateiname": raw_filename,
             "Soll (Excel)": target_text,
-            "Ist (Gladia)": actual_text,
+            "Ist (Gladia)": ist_display,
             "Punkte": points,
-            "Ähnlichkeit (%)": round(sim * 100, 1),
+            "Ähnlichkeit (%)": round(sim, 1),
             "Status": "OK" if found else "FEHLT"
         })
 
@@ -228,6 +290,20 @@ def main():
     print(f"   Trefferquote:    {quote:.1f}%")
     print(f"   Dauer:           {duration:.2f} Sekunden")
     print("="*30)
+    
+    # Detailausgabe
+    print("\nDETAILS:")
+    print("-" * 80)
+    print(f"{'Dateiname':<30} {'Soll':<15} {'Ist':<20} {'Ähnl.':<8} {'Pkt':<4} {'Status':<6}")
+    print("-" * 80)
+    
+    for result in results:
+        print(f"{result['Dateiname']:<30} "
+              f"{result['Soll (Excel)']:<15} "
+              f"{str(result['Ist (Gladia)'])[:20]:<20} "
+              f"{result['Ähnlichkeit (%)']:<8.1f} "
+              f"{result['Punkte']:<4} "
+              f"{result['Status']:<6}")
     
     try:
         df_result.to_excel(OUTPUT_FILE, index=False)
