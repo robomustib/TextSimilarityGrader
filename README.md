@@ -125,19 +125,19 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 If you use this software for your research, please cite it as follows:
 
 **APA Format:**
-> Bilgin, M. (2026). *TextSimilarityGrader* (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.xxxx
+> Bilgin, M. (2026). *TextSimilarityGrader* (Version 1.0.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.18422534
 
 **BibTeX:**
 ```bibtex
 
 @software{TextSimilarityGrader,
   author       = {Bilgin, Mustafa},
-  title        = {TextSimilarityGrader - Automated Fuzzy Evaluation for Speech-to-Text Transcripts},
+  title        = {TextSimilarityGrader: A Python Tool for Automated Fuzzy Evaluation of Speech-to-Text Transcripts in Research Contexts},
   year         = {2026},
   publisher    = {Zenodo},
   version      = {1.0.0},
-  doi          = {10.5281/zenodo.xxxxx},
-  url          = {https://doi.org/10.5281/zenodo.xxxx}
+  doi          = {10.5281/zenodo.18422534},
+  url          = {https://doi.org/10.5281/zenodo.18422534}
 }
 
 ```
