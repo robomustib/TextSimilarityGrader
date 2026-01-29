@@ -5,4 +5,4 @@ Compares ASR transcriptions against correct solutions using intelligent fuzzy ma
 <img src="https://github.com/robomustib/TextSimilarityGrader/blob/main/img/TextSimilarityGrader_Flowchart.svg" alt="Flowchart of TextSimilarityGrader" width="25%"/>
 
 ## Data Flowchart
-<img src="https://github.com/robomustib/gladia_batch_transcriber/blob/main/img/flowchart.svg" alt="Data Flowchart of TextSimilarityGrader" width="25%"/>
+<img src="https://github.com/robomustib/TextSimilarityGrader/blob/main/img/TextSimilarityGrader_Dataflowchart.svg" alt="Data Flowchart of TextSimilarityGrader" width="100%"/>
