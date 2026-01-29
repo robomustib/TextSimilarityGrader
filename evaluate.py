@@ -7,49 +7,49 @@ from pathlib import Path
 from difflib import SequenceMatcher
 
 # ==========================================
-# 1. EINSTELLUNGEN
+# 1. SETTINGS
 # ==========================================
 
 TRANSCRIPT_FOLDER = Path("./transcripts")
-EXCEL_FILE = "Lösungen.xlsx"
-OUTPUT_FILE = "Auswertung_Ergebnisse.xlsx"
+EXCEL_FILE = "Solutions.xlsx"
+OUTPUT_FILE = "Grading_Results.xlsx"
 SCORING_MODE = "fuzzy"
-# Toleranz: 0.75 erlaubt auch Buchstabendreher (z.B. Schbielplatz)
+# Tolerance: 0.75 allows for typos/letter swaps
 FUZZY_THRESHOLD = 0.75 
 
 # ==========================================
-# 2. HILFSFUNKTIONEN
+# 2. HELPER FUNCTIONS
 # ==========================================
 
 def print_banner():
     print("="*50)
-    print("   TRANSCRIPT EVALUATOR (Automatische Auswertung)")
+    print("   TRANSCRIPT EVALUATOR (Automated Grading)")
     print("="*50)
-    print(f" Transkript-Ordner: {TRANSCRIPT_FOLDER}")
-    print(f" Lösungs-Datei:     {EXCEL_FILE}")
-    print(f" Bewertungs-Modus: {SCORING_MODE}")
+    print(f" Transcript Folder: {TRANSCRIPT_FOLDER}")
+    print(f" Solutions File:    {EXCEL_FILE}")
+    print(f" Grading Mode:      {SCORING_MODE}")
     print("="*50 + "\n")
 
 def clean_text(text):
-    """Bereinigt Text: Alles klein, nur Buchstaben/Zahlen (auch Umlaute)."""
+    """Cleans text: Lowercase, alphanumeric only (including umlauts)."""
     if not isinstance(text, str):
         return ""
     text = text.lower().strip()
-    # WICHTIG: ß zu ss machen, damit Bus/Buß erkannt wird
+    # IMPORTANT: Convert ß to ss so Bus/Buß is recognized e.g. German
     text = text.replace("ß", "ss")
-    # Erlaubt a-z, 0-9 und äöü. Alles andere (Punkt, Komma) fliegt raus.
+    # Allows a-z, 0-9 and äöü. Everything else (punctuation) is removed.
     text = re.sub(r'[^\w\säöü]', '', text, flags=re.IGNORECASE)
-    # Doppelte Leerzeichen reduzieren
+    # Reduce double spaces
     text = ' '.join(text.split())
     return text
 
 def find_best_match(target, actual, mode):
     """
-    Sucht das beste Wort im Satz und gibt das ORIGINAL-Wort zurück.
+    Searches for the best matching word in the sentence and returns the ORIGINAL word.
     """
     t_clean = clean_text(target)
     
-    # Wir splitten den Original-Text, damit wir das Original-Wort zurückgeben können
+    # Split original text to return the original word
     actual_words_orig = actual.split()
     
     if not actual_words_orig:
@@ -58,7 +58,7 @@ def find_best_match(target, actual, mode):
     best_match_word = None
     best_similarity = 0.0
     
-    # Jedes Wort im Satz prüfen
+    # Check each word in the sentence
     for w_orig in actual_words_orig:
         w_clean = clean_text(w_orig)
         
@@ -78,12 +78,12 @@ def find_best_match(target, actual, mode):
             best_similarity = current_sim
             best_match_word = w_orig 
 
-    # Punkte vergeben?
+    # Assign points?
     points = 0
     if best_similarity >= (FUZZY_THRESHOLD * 100):
         points = 1
     
-    # Spezialfall kurze Wörter (<= 3 Zeichen)
+    # Special case for short words (<= 3 chars)
     if len(t_clean) <= 3:
         if best_similarity < 85: 
              points = 0
@@ -93,7 +93,7 @@ def find_best_match(target, actual, mode):
     return best_match_word, best_similarity, points
 
 def extract_from_json(content):
-    """Holt den reinen Text aus dem Gladia-JSON (Robust)."""
+    """Extracts pure text from Gladia JSON (Robust)."""
     try:
         data = json.loads(content)
         def find_text_in_obj(obj):
@@ -111,7 +111,7 @@ def extract_from_json(content):
         return content
 
 def get_file_content(filepath):
-    """Liest Datei (txt/json) und behandelt Encoding-Probleme."""
+    """Reads file (txt/json) and handles encoding issues."""
     content = ""
     success = False
     try:
@@ -124,14 +124,14 @@ def get_file_content(filepath):
                 content = f.read().strip()
                 success = True
         except:
-            return "[DATEI NICHT LESBAR]", False
+            return "[FILE UNREADABLE]", False
 
     if success and filepath.suffix.lower() == '.json':
         content = extract_from_json(content)
     return content, success
 
 # ==========================================
-# 3. HAUPT-PROGRAMM
+# 3. MAIN PROGRAM
 # ==========================================
 
 def main():
@@ -139,30 +139,31 @@ def main():
     print_banner()
     
     if not os.path.exists(EXCEL_FILE):
-        print(f" FEHLER: Datei '{EXCEL_FILE}' nicht gefunden!")
-        input("\nDrücke ENTER...")
+        print(f" ERROR: File '{EXCEL_FILE}' not found!")
+        input("\nPress ENTER to exit...")
         return
 
     try:
         df = pd.read_excel(EXCEL_FILE)
-        if len(df.columns) < 2: raise ValueError("Zu wenige Spalten")
-        df.columns.values[0] = "Dateiname"
-        df.columns.values[1] = "Soll_Text"
+        if len(df.columns) < 2: raise ValueError("Too few columns")
+        df.columns.values[0] = "Filename"
+        df.columns.values[1] = "Target_Text"
     except Exception as e:
-        print(f" Fehler Excel: {e}")
-        input("\nDrücke ENTER...")
+        print(f" Excel Error: {e}")
+        input("\nPress ENTER...")
         return
 
     results = []
-    print(f" Starte Auswertung für {len(df)} Einträge...\n")
+    print(f" Starting evaluation for {len(df)} entries...\n")
 
     for index, row in df.iterrows():
-        raw_filename = str(row["Dateiname"]).strip()
+        raw_filename = str(row["Filename"]).strip()
         
+        # Ignore system files starting with underscore
         if raw_filename.startswith("_"):
             continue
 
-        raw_target = row["Soll_Text"]
+        raw_target = row["Target_Text"]
         if pd.isna(raw_target) or str(raw_target).strip().lower() == "nan":
             target = ""
         else:
@@ -170,7 +171,7 @@ def main():
 
         base_name = Path(raw_filename).stem
         found = False
-        actual_raw = "[NICHT GEFUNDEN]"
+        actual_raw = "[NOT FOUND]"
         
         for ext in [".json", ".txt"]:
             p = TRANSCRIPT_FOLDER / (base_name + ext)
@@ -178,7 +179,7 @@ def main():
                 actual_raw, found = get_file_content(p)
                 if found: break
         
-        # Bewerten
+        # Grading
         ist_display = ""
         points = 0
         similarity = 0
@@ -196,36 +197,36 @@ def main():
             similarity = 0
 
         results.append({
-            "Dateiname": raw_filename,
-            "Soll": target,
-            "Ist (Gefundenes Wort)": ist_display,
-            "Transkript (Ganzer Satz)": actual_raw if found else "[FEHLT]",
-            "Punkte": points,
-            "Ähnlichkeit (%)": round(similarity, 1),
-            "Status": "OK" if found else "FEHLT"
+            "Filename": raw_filename,
+            "Target": target,
+            "Actual (Found Word)": ist_display,
+            "Transcript (Full Sentence)": actual_raw if found else "[MISSING]",
+            "Points": points,
+            "Similarity (%)": round(similarity, 1),
+            "Status": "OK" if found else "MISSING"
         })
 
-    # Speichern
+    # Save Results
     df_result = pd.DataFrame(results)
-    correct = df_result["Punkte"].sum()
-    valid_count = len(df_result[df_result["Soll"] != ""])
+    correct = df_result["Points"].sum()
+    valid_count = len(df_result[df_result["Target"] != ""])
     quote = (correct / valid_count * 100) if valid_count > 0 else 0
     
     print("\n" + "="*30)
-    print(f" ERGEBNIS")
-    print(f"   Dateien gesamt:  {len(results)}")
-    print(f"   Punkte vergeben: {correct}")
-    print(f"   Trefferquote:    {quote:.1f}%")
-    print(f"   Dauer:           {time.time() - start_time:.2f} Sek")
+    print(f" RESULTS")
+    print(f"   Total files:     {len(results)}")
+    print(f"   Points awarded:  {correct}")
+    print(f"   Success rate:    {quote:.1f}%")
+    print(f"   Duration:        {time.time() - start_time:.2f} sec")
     print("="*30)
     
     try:
         df_result.to_excel(OUTPUT_FILE, index=False)
-        print(f"\n Erfolgreich gespeichert in: {OUTPUT_FILE}")
+        print(f"\n Successfully saved to: {OUTPUT_FILE}")
     except Exception as e:
-        print(f"\n Fehler beim Speichern: {e}")
+        print(f"\n Error saving file: {e}")
 
-    input("\n Fertig. Drücke ENTER zum Schließen...")
+    input("\n Done. Press ENTER to close...")
 
 if __name__ == "__main__":
     main()
