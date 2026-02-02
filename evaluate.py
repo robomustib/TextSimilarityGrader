@@ -1,3 +1,9 @@
+"""
+TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
+Copyright (c) 2026 Mustafa Bilgin
+Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+"""
+
 import pandas as pd
 import re
 import os
