@@ -118,7 +118,7 @@ Creates a pre-filled Solutions.xlsx.
 ```
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+See [LICENSE](LICENSE) for the full text of the agreement.
 
 ## Citation
 
