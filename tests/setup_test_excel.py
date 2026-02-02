@@ -1,3 +1,9 @@
+"""
+TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
+Copyright (c) 2026 Mustafa Bilgin
+Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+"""
+
 import json
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
