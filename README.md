@@ -119,7 +119,7 @@ Creates a pre-filled Solutions.xlsx.
 
 ## License
 This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** License.
-**Note:** You are free to share and adapt the material for non-commercial purposes, provided you give appropriate credit. Commercial use is not permitted without prior consent. For details, see the [LICENSE](LICENSE) file.
+Note: You are free to share and adapt the material for non-commercial purposes, provided you give appropriate credit. Commercial use is not permitted without prior consent. For details, see the [LICENSE](LICENSE) file.
 Copyright (c) 2026 Mustafa Bilgin
 
 ## Citation
