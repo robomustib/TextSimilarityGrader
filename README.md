@@ -48,7 +48,8 @@ cd TextSimilarityGrader
 
 **Step 1: Get your Transcripts**
 
-Ensure your transcript files (.json or .txt) are in the transcripts/ folder. (If you need to generate transcripts from audio files first, check out the Gladia Batch Transcriber).
+Ensure your transcript files (.json or .txt) are in the transcripts/ folder. 
+(If you need to generate transcripts from audio files first, check out the Gladia Batch Transcriber).
 
 **Step 2: Generate the Solution Template**
 
