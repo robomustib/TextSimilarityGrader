@@ -49,57 +49,83 @@ def clean_text(text):
     text = ' '.join(text.split())
     return text
 
-def find_best_match(target, actual, mode):
+def find_best_match(target_input, actual, mode):
     """
-    Searches for the best matching word in the sentence and returns the ORIGINAL word.
+    Sucht das beste Wort im Satz.
+    NEU: Unterstützt mehrere Synonyme, getrennt durch Komma (z.B. "laufen, läuf").
     """
-    t_clean = clean_text(target)
-    
-    # Split original text to return the original word
+    # 1. Zelle am Komma aufsplitten -> Liste von Zielen erstellen
+    # Z.B. "Schubkarre, Karre" -> ["Schubkarre", "Karre"]
+    # str(target_input) sichert ab, falls Excel Zahlen (z.B. 2024) sendet
+    targets = [t.strip() for t in str(target_input).split(",")]
+
+    # Hier speichern wir das beste Ergebnis aller Varianten (Global für diesen Aufruf)
+    overall_best_word = None
+    overall_best_sim = 0.0
+    overall_points = 0
+
     actual_words_orig = actual.split()
     
+    # Wenn Transkript leer ist, sofort raus
     if not actual_words_orig:
         return None, 0, 0
 
-    best_match_word = None
-    best_similarity = 0.0
-    
-    # Check each word in the sentence
-    for w_orig in actual_words_orig:
-        w_clean = clean_text(w_orig)
+    # 2. Jedes Ziel-Wort (Synonym) einzeln prüfen
+    for target in targets:
+        t_clean = clean_text(target)
+        # Falls leeres Synonym (z.B. durch "Wort,,Wort"), überspringen
+        if not t_clean: 
+            continue
+
+        # Lokale Bestwerte nur für DIESES Synonym
+        current_target_best_sim = 0.0
+        current_target_best_word = None
         
-        current_sim = 0.0
+        # Jedes Wort im Transkript prüfen
+        for w_orig in actual_words_orig:
+            w_clean = clean_text(w_orig)
+            current_sim = 0.0
+            
+            if mode == "strict":
+                current_sim = 100.0 if t_clean == w_clean else 0.0
+            elif mode == "contains":
+                # Prüft, ob Ziel im Wort steckt (gut für "lauf" in "gelaufen")
+                current_sim = 100.0 if t_clean in w_clean else 0.0
+            elif mode == "fuzzy":
+                if t_clean in w_clean:
+                    current_sim = 100.0
+                else:
+                    current_sim = SequenceMatcher(None, t_clean, w_clean).ratio() * 100
+            
+            # Ist das aktuelle Wort im Satz ähnlicher als das vorige Wort im Satz?
+            if current_sim > current_target_best_sim:
+                current_target_best_sim = current_sim
+                current_target_best_word = w_orig 
+
+        # Punkte berechnen für dieses spezifische Synonym
+        current_points = 0
+        if current_target_best_sim >= (FUZZY_THRESHOLD * 100):
+            current_points = 1
         
-        if mode == "strict":
-            current_sim = 100.0 if t_clean == w_clean else 0.0
-        elif mode == "contains":
-            current_sim = 100.0 if t_clean in w_clean else 0.0
-        elif mode == "fuzzy":
-            if t_clean in w_clean:
-                current_sim = 100.0
+        # Spezialfall kurze Wörter (<= 3 Zeichen)
+        if len(t_clean) <= 3:
+            if current_target_best_sim < 85: 
+                 current_points = 0
             else:
-                current_sim = SequenceMatcher(None, t_clean, w_clean).ratio() * 100
-        
-        if current_sim > best_similarity:
-            best_similarity = current_sim
-            best_match_word = w_orig 
+                 current_points = 1
 
-    # Assign points?
-    points = 0
-    if best_similarity >= (FUZZY_THRESHOLD * 100):
-        points = 1
-    
-    # Special case for short words (<= 3 chars)
-    if len(t_clean) <= 3:
-        if best_similarity < 85: 
-             points = 0
-        else:
-             points = 1
+        # 3. Ist dieses Synonym besser als die bisher getesteten Synonyme?
+        # Beispiel: "Karre" hatte 50%, "Schubkarre" hat 90%. Wir nehmen die 90%.
+        if current_target_best_sim > overall_best_sim:
+            overall_best_sim = current_target_best_sim
+            overall_best_word = current_target_best_word
+            overall_points = current_points
 
-    return best_match_word, best_similarity, points
+    # Das Beste zurückgeben (gleiches Format wie früher!)
+    return overall_best_word, overall_best_sim, overall_points
 
 def extract_from_json(content):
-    """Extracts pure text from Gladia JSON (Robust)."""
+    """Extracts pure text from Gladia JSON."""
     try:
         data = json.loads(content)
         def find_text_in_obj(obj):
