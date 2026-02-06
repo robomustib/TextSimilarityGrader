@@ -31,7 +31,7 @@ def main():
     border = Border(left=Side('thin'), right=Side('thin'), top=Side('thin'), bottom=Side('thin'))
 
     # Set Headers
-    headers = ["Filename", "Target_Text", "ID", "Type", "Status"]
+    headers = ["Filename", "Target_Text (Synonyms comma-separated)", "ID", "Type", "Status"]
     
     for col, val in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=val)
@@ -44,8 +44,9 @@ def main():
     # 2. THE TWO EXAMPLES
     # ==========================================
     examples = [
-        ("EXAMPLE_FILE_1.json", "House", "Ex.", "JSON", "Example (please ignore)"),
-        ("EXAMPLE_FILE_2.txt",  "Apple", "Ex.", "TXT",  "Example (please ignore)")
+        # Here we show her directly how it works:
+        ("EXAMPLE_FILE_1.json", "House, Building, Hut", "Ex.", "JSON", "Example (please ignore)"),
+        ("EXAMPLE_FILE_2.txt",  "Apple",                "Ex.", "TXT",  "Example (please ignore)")
     ]
 
     row_idx = 2
