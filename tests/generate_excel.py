@@ -108,7 +108,7 @@ def main():
 
     # Column Widths
     ws.column_dimensions['A'].width = 35
-    ws.column_dimensions['B'].width = 25
+    ws.column_dimensions['B'].width = 40
     ws.column_dimensions['C'].width = 8
     ws.column_dimensions['D'].width = 10
     ws.column_dimensions['E'].width = 25
