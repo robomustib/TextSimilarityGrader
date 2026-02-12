@@ -117,6 +117,8 @@ Creates a pre-filled Solutions.xlsx.
    bash
    python evaluate.py
 ```
+## Flowchart
+<img src="https://github.com/robomustib/TextSimilarityGrader/blob/main/img/Simplified_Data_Flow.svg" alt="Flowchart of TextSimilarityGrader" width="50%"/>
 
 ## License
 This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** License.
