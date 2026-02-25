@@ -2,7 +2,7 @@
 TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
 Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist Support
+Add-on: Blacklist Support (Strict Word Boundary)
 """
 
 import pandas as pd
@@ -42,67 +42,61 @@ def clean_text(text):
     if not isinstance(text, str):
         return ""
     text = text.lower().strip()
-    # IMPORTANT: Convert ß to ss so Bus/Buß is recognized e.g. German
     text = text.replace("ß", "ss")
-    # Allows a-z, 0-9 and äöü. Everything else (punctuation) is removed.
     text = re.sub(r'[^\w\säöü]', '', text, flags=re.IGNORECASE)
-    # Reduce double spaces
     text = ' '.join(text.split())
     return text
 
 def check_forbidden(forbidden_input, actual_text):
     """
-    Checks if any forbidden word appears in the transcript.
+    Checks if any forbidden word appears in the transcript AS AN ISOLATED WORD.
     Returns: (True, match_word) if forbidden word found, else (False, None)
     """
     if pd.isna(forbidden_input) or str(forbidden_input).strip() == "":
         return False, None
         
-    # Split forbidden words by comma
     forbidden_list = [f.strip() for f in str(forbidden_input).split(",")]
     
     clean_transcript = clean_text(actual_text)
+    transcript_words = clean_transcript.split() # Split into exact individual words
     
     for f_word in forbidden_list:
         clean_f = clean_text(f_word)
         if not clean_f: continue
         
-        # Check if forbidden word is in transcript (fuzzy or exact)
-        # We use a strict "contains" check here to be safe
-        if clean_f in clean_transcript:
-            return True, f_word
+        # Check if the forbidden term consists of multiple words
+        if " " in clean_f:
+            # We pad with spaces to ensure we match whole words only
+            padded_transcript = f" {clean_transcript} "
+            padded_f = f" {clean_f} "
+            if padded_f in padded_transcript:
+                return True, f_word
+        else:
+            # Single word: check if it exactly matches any isolated word in the transcript
+            if clean_f in transcript_words:
+                return True, f_word
             
     return False, None
 
 def find_best_match(target_input, actual, mode):
-    """
-    Sucht das beste Wort im Satz.
-    Unterstützt mehrere Synonyme, getrennt durch Komma (z.B. "laufen, läuf").
-    """
-    # 1. Zelle am Komma aufsplitten -> Liste von Zielen erstellen
     targets = [t.strip() for t in str(target_input).split(",")]
 
-    # Hier speichern wir das beste Ergebnis aller Varianten
     overall_best_word = None
     overall_best_sim = 0.0
     overall_points = 0
 
     actual_words_orig = actual.split()
     
-    # Wenn Transkript leer ist, sofort raus
     if not actual_words_orig:
         return None, 0, 0
 
-    # 2. Jedes Ziel-Wort (Synonym) einzeln prüfen
     for target in targets:
         t_clean = clean_text(target)
         if not t_clean: continue
 
-        # Lokale Bestwerte nur für DIESES Synonym
         current_target_best_sim = 0.0
         current_target_best_word = None
         
-        # Jedes Wort im Transkript prüfen
         for w_orig in actual_words_orig:
             w_clean = clean_text(w_orig)
             current_sim = 0.0
@@ -121,19 +115,16 @@ def find_best_match(target_input, actual, mode):
                 current_target_best_sim = current_sim
                 current_target_best_word = w_orig 
 
-        # Punkte berechnen für dieses spezifische Synonym
         current_points = 0
         if current_target_best_sim >= (FUZZY_THRESHOLD * 100):
             current_points = 1
         
-        # Spezialfall kurze Wörter (<= 3 Zeichen)
         if len(t_clean) <= 3:
             if current_target_best_sim < 85: 
                  current_points = 0
             else:
                  current_points = 1
 
-        # 3. Ist dieses Synonym besser als die bisher getesteten Synonyme?
         if current_target_best_sim > overall_best_sim:
             overall_best_sim = current_target_best_sim
             overall_best_word = current_target_best_word
@@ -142,7 +133,6 @@ def find_best_match(target_input, actual, mode):
     return overall_best_word, overall_best_sim, overall_points
 
 def extract_from_json(content):
-    """Extracts pure text from Gladia JSON."""
     try:
         data = json.loads(content)
         def find_text_in_obj(obj):
@@ -160,7 +150,6 @@ def extract_from_json(content):
         return content
 
 def get_file_content(filepath):
-    """Reads file (txt/json) and handles encoding issues."""
     content = ""
     success = False
     try:
@@ -194,19 +183,16 @@ def main():
 
     try:
         df = pd.read_excel(EXCEL_FILE)
-        # Check and rename columns dynamically
         if len(df.columns) < 2: 
             raise ValueError("Too few columns")
             
-        # Standardize column names
         df.columns.values[0] = "Filename"
         df.columns.values[1] = "Target_Text"
         
-        # Check if Forbidden column exists (Col Index 2)
         if len(df.columns) > 2:
-             df.columns.values[2] = "Forbidden" # Map new column
+             df.columns.values[2] = "Forbidden"
         else:
-             df["Forbidden"] = "" # Add empty column if missing (backward compatibility)
+             df["Forbidden"] = "" 
 
     except Exception as e:
         print(f" Excel Error: {e}")
@@ -219,11 +205,9 @@ def main():
     for index, row in df.iterrows():
         raw_filename = str(row["Filename"]).strip()
         
-        # Ignore system files starting with underscore
         if raw_filename.startswith("_"):
             continue
 
-        # Get Target and Forbidden
         raw_target = row["Target_Text"]
         target = "" if (pd.isna(raw_target) or str(raw_target).strip().lower() == "nan") else str(raw_target).strip()
 
@@ -233,30 +217,26 @@ def main():
         found = False
         actual_raw = "[NOT FOUND]"
         
-        # Find file
         for ext in [".json", ".txt"]:
             p = TRANSCRIPT_FOLDER / (base_name + ext)
             if p.exists():
                 actual_raw, found = get_file_content(p)
                 if found: break
         
-        # Grading Logic
         ist_display = ""
         points = 0
         similarity = 0
         status_msg = "OK"
 
         if found and target:
-            # 1. CHECK FORBIDDEN WORDS FIRST
             is_forbidden, forbidden_word_found = check_forbidden(raw_forbidden, actual_raw)
             
             if is_forbidden:
                 points = 0
-                similarity = 0 # Forced to 0
+                similarity = 0 
                 ist_display = f"FORBIDDEN: {forbidden_word_found}"
                 status_msg = "FORBIDDEN"
             else:
-                # 2. RUN STANDARD CHECK
                 match_word, similarity, points = find_best_match(target, actual_raw, SCORING_MODE)
                 
                 if match_word:
@@ -273,7 +253,7 @@ def main():
         results.append({
             "Filename": raw_filename,
             "Target": target,
-            "Forbidden": raw_forbidden, # Log this in output
+            "Forbidden": raw_forbidden, 
             "Actual (Found Word)": ist_display,
             "Transcript (Full Sentence)": actual_raw if found else "[MISSING]",
             "Points": points,
@@ -281,11 +261,9 @@ def main():
             "Status": status_msg
         })
 
-    # Save Results
     df_result = pd.DataFrame(results)
     correct = df_result["Points"].sum()
     
-    # Calculate valid count (files that exist and have a target)
     valid_entries = df_result[ (df_result["Target"] != "") & (df_result["Transcript (Full Sentence)"] != "[MISSING]") ]
     valid_count = len(valid_entries)
     
