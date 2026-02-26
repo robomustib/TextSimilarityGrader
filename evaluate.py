@@ -2,6 +2,7 @@
 TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
 Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Add-on: Multi-Word (N-Gram) Support & Internationalization (DE/TR)
 """
 
 import pandas as pd
@@ -23,73 +24,75 @@ SCORING_MODE = "fuzzy"
 # Tolerance: 0.75 allows for typos/letter swaps
 FUZZY_THRESHOLD = 0.75 
 
+# Language toggle: "DE" for German, "TR" for Turkish
+EVALUATION_LANGUAGE = "DE" 
+
 # ==========================================
 # 2. HELPER FUNCTIONS
 # ==========================================
 
 def print_banner():
     print("="*50)
-    print("   TRANSCRIPT EVALUATOR (Automated Grading)")
+    print("   TRANSCRIPT EVALUATOR (Base Version)")
     print("="*50)
     print(f" Transcript Folder: {TRANSCRIPT_FOLDER}")
     print(f" Solutions File:    {EXCEL_FILE}")
     print(f" Grading Mode:      {SCORING_MODE}")
+    print(f" Language:          {EVALUATION_LANGUAGE}")
     print("="*50 + "\n")
 
 def clean_text(text):
-    """Cleans text: Lowercase, alphanumeric only (including umlauts)."""
     if not isinstance(text, str):
         return ""
+        
+    # Language specific handling
+    if EVALUATION_LANGUAGE == "TR":
+        # Handle Turkish dotless 'ı' and dotted 'İ' correctly
+        text = text.replace("I", "ı").replace("İ", "i")
+        
     text = text.lower().strip()
-    # IMPORTANT: Convert ß to ss so Bus/Buß is recognized e.g. German
     text = text.replace("ß", "ss")
-    # Allows a-z, 0-9 and äöü. Everything else (punctuation) is removed.
-    text = re.sub(r'[^\w\säöü]', '', text, flags=re.IGNORECASE)
-    # Reduce double spaces
+    # Keep alphanumeric characters, spaces, and specific German/Turkish special chars
+    text = re.sub(r'[^\w\säöüçğış]', '', text, flags=re.IGNORECASE)
     text = ' '.join(text.split())
     return text
 
 def find_best_match(target_input, actual, mode):
-    """
-    Sucht das beste Wort im Satz.
-    NEU: Unterstützt mehrere Synonyme, getrennt durch Komma (z.B. "laufen, läuf").
-    """
-    # 1. Zelle am Komma aufsplitten -> Liste von Zielen erstellen
-    # Z.B. "Schubkarre, Karre" -> ["Schubkarre", "Karre"]
-    # str(target_input) sichert ab, falls Excel Zahlen (z.B. 2024) sendet
     targets = [t.strip() for t in str(target_input).split(",")]
 
-    # Hier speichern wir das beste Ergebnis aller Varianten (Global für diesen Aufruf)
     overall_best_word = None
     overall_best_sim = 0.0
     overall_points = 0
 
     actual_words_orig = actual.split()
     
-    # Wenn Transkript leer ist, sofort raus
     if not actual_words_orig:
         return None, 0, 0
 
-    # 2. Jedes Ziel-Wort (Synonym) einzeln prüfen
     for target in targets:
         t_clean = clean_text(target)
-        # Falls leeres Synonym (z.B. durch "Wort,,Wort"), überspringen
-        if not t_clean: 
-            continue
+        if not t_clean: continue
 
-        # Lokale Bestwerte nur für DIESES Synonym
+        target_len = len(t_clean.split())
         current_target_best_sim = 0.0
         current_target_best_word = None
         
-        # Jedes Wort im Transkript prüfen
-        for w_orig in actual_words_orig:
+        # N-Grams: Create word blocks matching the target phrase length
+        n_grams = []
+        if target_len > 0 and len(actual_words_orig) >= target_len:
+            for i in range(len(actual_words_orig) - target_len + 1):
+                n_gram_orig = " ".join(actual_words_orig[i:i+target_len])
+                n_grams.append(n_gram_orig)
+        else:
+            n_grams = [" ".join(actual_words_orig)]
+
+        for w_orig in n_grams:
             w_clean = clean_text(w_orig)
             current_sim = 0.0
             
             if mode == "strict":
                 current_sim = 100.0 if t_clean == w_clean else 0.0
             elif mode == "contains":
-                # Prüft, ob Ziel im Wort steckt (gut für "lauf" in "gelaufen")
                 current_sim = 100.0 if t_clean in w_clean else 0.0
             elif mode == "fuzzy":
                 if t_clean in w_clean:
@@ -97,35 +100,29 @@ def find_best_match(target_input, actual, mode):
                 else:
                     current_sim = SequenceMatcher(None, t_clean, w_clean).ratio() * 100
             
-            # Ist das aktuelle Wort im Satz ähnlicher als das vorige Wort im Satz?
             if current_sim > current_target_best_sim:
                 current_target_best_sim = current_sim
                 current_target_best_word = w_orig 
 
-        # Punkte berechnen für dieses spezifische Synonym
         current_points = 0
         if current_target_best_sim >= (FUZZY_THRESHOLD * 100):
             current_points = 1
         
-        # Spezialfall kurze Wörter (<= 3 Zeichen)
+        # Stricter evaluation for very short words (<= 3 characters)
         if len(t_clean) <= 3:
             if current_target_best_sim < 85: 
                  current_points = 0
             else:
                  current_points = 1
 
-        # 3. Ist dieses Synonym besser als die bisher getesteten Synonyme?
-        # Beispiel: "Karre" hatte 50%, "Schubkarre" hat 90%. Wir nehmen die 90%.
         if current_target_best_sim > overall_best_sim:
             overall_best_sim = current_target_best_sim
             overall_best_word = current_target_best_word
             overall_points = current_points
 
-    # Das Beste zurückgeben (gleiches Format wie früher!)
     return overall_best_word, overall_best_sim, overall_points
 
 def extract_from_json(content):
-    """Extracts pure text from Gladia JSON."""
     try:
         data = json.loads(content)
         def find_text_in_obj(obj):
@@ -143,7 +140,6 @@ def extract_from_json(content):
         return content
 
 def get_file_content(filepath):
-    """Reads file (txt/json) and handles encoding issues."""
     content = ""
     success = False
     try:
@@ -177,12 +173,15 @@ def main():
 
     try:
         df = pd.read_excel(EXCEL_FILE)
-        if len(df.columns) < 2: raise ValueError("Too few columns")
+        if len(df.columns) < 2: 
+            raise ValueError("Too few columns (at least 2 required)")
+            
         df.columns.values[0] = "Filename"
         df.columns.values[1] = "Target_Text"
+
     except Exception as e:
         print(f" Excel Error: {e}")
-        input("\nPress ENTER...")
+        input("\nPress ENTER to exit...")
         return
 
     results = []
@@ -191,16 +190,13 @@ def main():
     for index, row in df.iterrows():
         raw_filename = str(row["Filename"]).strip()
         
-        # Ignore system files starting with underscore
+        # Skip system files
         if raw_filename.startswith("_"):
             continue
 
         raw_target = row["Target_Text"]
-        if pd.isna(raw_target) or str(raw_target).strip().lower() == "nan":
-            target = ""
-        else:
-            target = str(raw_target).strip()
-
+        target = "" if (pd.isna(raw_target) or str(raw_target).strip().lower() == "nan") else str(raw_target).strip()
+        
         base_name = Path(raw_filename).stem
         found = False
         actual_raw = "[NOT FOUND]"
@@ -211,10 +207,10 @@ def main():
                 actual_raw, found = get_file_content(p)
                 if found: break
         
-        # Grading
         ist_display = ""
         points = 0
         similarity = 0
+        status_msg = "OK"
 
         if found and target:
             match_word, similarity, points = find_best_match(target, actual_raw, SCORING_MODE)
@@ -227,6 +223,8 @@ def main():
             ist_display = "-"
             points = 0
             similarity = 0
+            if not found: status_msg = "MISSING FILE"
+            elif not target: status_msg = "NO TARGET"
 
         results.append({
             "Filename": raw_filename,
@@ -235,18 +233,22 @@ def main():
             "Transcript (Full Sentence)": actual_raw if found else "[MISSING]",
             "Points": points,
             "Similarity (%)": round(similarity, 1),
-            "Status": "OK" if found else "MISSING"
+            "Status": status_msg
         })
 
-    # Save Results
     df_result = pd.DataFrame(results)
     correct = df_result["Points"].sum()
-    valid_count = len(df_result[df_result["Target"] != ""])
+    
+    # Only calculate success rate for files that exist and have a target
+    valid_entries = df_result[ (df_result["Target"] != "") & (df_result["Transcript (Full Sentence)"] != "[MISSING]") ]
+    valid_count = len(valid_entries)
+    
     quote = (correct / valid_count * 100) if valid_count > 0 else 0
     
     print("\n" + "="*30)
     print(f" RESULTS")
     print(f"   Total files:     {len(results)}")
+    print(f"   Valid entries:   {valid_count}")
     print(f"   Points awarded:  {correct}")
     print(f"   Success rate:    {quote:.1f}%")
     print(f"   Duration:        {time.time() - start_time:.2f} sec")
