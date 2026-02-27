@@ -2,7 +2,7 @@
 TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
 Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist & Multi-Word (Turkish Edition v2)
+Add-on: Blacklist & Multi-Word (Turkish Edition v3 - Final Count Logic)
 """
 
 import pandas as pd
@@ -33,7 +33,7 @@ EVALUATION_LANGUAGE = "TR"
 
 def print_banner():
     print("="*50)
-    print("   TRANSCRIPT EVALUATOR (TURKISH EDITION v2)")
+    print("   TRANSCRIPT EVALUATOR (TURKISH EDITION v3)")
     print("="*50)
     print(f" Transcript Folder: {TRANSCRIPT_FOLDER}")
     print(f" Solutions File:    {EXCEL_FILE}")
@@ -60,29 +60,46 @@ def check_forbidden(forbidden_input, actual_text, ignore_match=None):
         
     forbidden_list = [f.strip() for f in str(forbidden_input).split(",")]
     clean_transcript = clean_text(actual_text)
-    
-    # NEW: Remove the successfully matched target from the transcript 
-    # so its parts don't accidentally trigger the forbidden list.
-    if ignore_match:
-        clean_ignore = clean_text(ignore_match)
-        if clean_ignore:
-            clean_transcript = clean_transcript.replace(clean_ignore, "", 1)
-            clean_transcript = ' '.join(clean_transcript.split())
-
     transcript_words = clean_transcript.split()
     
     for f_word in forbidden_list:
         clean_f = clean_text(f_word)
         if not clean_f: continue
         
+        found_in_transcript = False
+        count_in_transcript = 0
+        
+        # Check if forbidden word is in transcript and count occurrences
         if " " in clean_f:
             padded_transcript = f" {clean_transcript} "
             padded_f = f" {clean_f} "
             if padded_f in padded_transcript:
-                return True, f_word
+                found_in_transcript = True
+                count_in_transcript = padded_transcript.count(padded_f)
         else:
             if clean_f in transcript_words:
-                return True, f_word
+                found_in_transcript = True
+                count_in_transcript = transcript_words.count(clean_f)
+                
+        if found_in_transcript:
+            # Check for false alarm: Is the forbidden word entirely part of our target match?
+            if ignore_match:
+                clean_match = clean_text(ignore_match)
+                count_in_match = 0
+                if " " in clean_f:
+                    padded_match = f" {clean_match} "
+                    padded_f = f" {clean_f} "
+                    count_in_match = padded_match.count(padded_f)
+                else:
+                    match_words_list = clean_match.split()
+                    count_in_match = match_words_list.count(clean_f)
+                    
+                # If it only appears inside the target match, it's a false alarm!
+                if count_in_transcript > 0 and count_in_transcript == count_in_match:
+                    continue # Skip and check the next forbidden word
+                    
+            # If we reach here, it's a REAL forbidden word!
+            return True, f_word
             
     return False, None
 
@@ -142,13 +159,12 @@ def find_best_match(target_input, actual, mode):
             else:
                  current_points = 1
 
-        # NEW: Tie-Breaker Logic
+        # Tie-Breaker Logic
         if current_target_best_sim > overall_best_sim:
             overall_best_sim = current_target_best_sim
             overall_best_word = current_target_best_word
             overall_points = current_points
         elif current_target_best_sim == overall_best_sim and current_target_best_sim > 0:
-            # If two targets have the same score, prefer the one with MORE words
             if current_target_best_word and overall_best_word:
                 if len(current_target_best_word.split()) > len(overall_best_word.split()):
                     overall_best_word = current_target_best_word
@@ -253,10 +269,8 @@ def main():
         status_msg = "OK"
 
         if found and target:
-            # NEW: Run find_best_match FIRST to see if the child hit a target
             match_word, similarity, points = find_best_match(target, actual_raw, SCORING_MODE)
             
-            # Pass the successfully matched word to check_forbidden so it can be ignored
             ignore_word = match_word if points > 0 else None
             is_forbidden, forbidden_word_found = check_forbidden(raw_forbidden, actual_raw, ignore_word)
             
