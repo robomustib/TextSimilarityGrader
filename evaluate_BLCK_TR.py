@@ -2,7 +2,7 @@
 TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
 Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist & Multi-Word (Turkish Edition)
+Add-on: Blacklist & Multi-Word (Turkish Edition v2)
 """
 
 import pandas as pd
@@ -18,10 +18,14 @@ from difflib import SequenceMatcher
 # ==========================================
 
 TRANSCRIPT_FOLDER = Path("./transcripts")
-EXCEL_FILE = "Solutions_BLCK.xlsx" 
+EXCEL_FILE = "Solutions_BLCK.xlsx"
 OUTPUT_FILE = "Grading_Results_BLCK_TR.xlsx"
 SCORING_MODE = "fuzzy"
+# Tolerance: 0.75 allows for typos/letter swaps
 FUZZY_THRESHOLD = 0.75 
+
+# Language toggle: "DE" for German, "TR" for Turkish
+EVALUATION_LANGUAGE = "TR" 
 
 # ==========================================
 # 2. HELPER FUNCTIONS
@@ -29,29 +33,42 @@ FUZZY_THRESHOLD = 0.75
 
 def print_banner():
     print("="*50)
-    print("   TRANSCRIPT EVALUATOR (TURKISH EDITION)")
+    print("   TRANSCRIPT EVALUATOR (TURKISH EDITION v2)")
     print("="*50)
     print(f" Transcript Folder: {TRANSCRIPT_FOLDER}")
     print(f" Solutions File:    {EXCEL_FILE}")
     print(f" Grading Mode:      {SCORING_MODE}")
+    print(f" Language:          {EVALUATION_LANGUAGE}")
     print("="*50 + "\n")
 
 def clean_text(text):
     if not isinstance(text, str):
         return ""
     
-    text = text.replace("I", "ı").replace("İ", "i")
+    if EVALUATION_LANGUAGE == "TR":
+        text = text.replace("I", "ı").replace("İ", "i")
+        
     text = text.lower().strip()
+    text = text.replace("ß", "ss")
     text = re.sub(r'[^\w\säöüçğış]', '', text, flags=re.IGNORECASE)
     text = ' '.join(text.split())
     return text
 
-def check_forbidden(forbidden_input, actual_text):
+def check_forbidden(forbidden_input, actual_text, ignore_match=None):
     if pd.isna(forbidden_input) or str(forbidden_input).strip() == "":
         return False, None
         
     forbidden_list = [f.strip() for f in str(forbidden_input).split(",")]
     clean_transcript = clean_text(actual_text)
+    
+    # NEW: Remove the successfully matched target from the transcript 
+    # so its parts don't accidentally trigger the forbidden list.
+    if ignore_match:
+        clean_ignore = clean_text(ignore_match)
+        if clean_ignore:
+            clean_transcript = clean_transcript.replace(clean_ignore, "", 1)
+            clean_transcript = ' '.join(clean_transcript.split())
+
     transcript_words = clean_transcript.split()
     
     for f_word in forbidden_list:
@@ -125,10 +142,17 @@ def find_best_match(target_input, actual, mode):
             else:
                  current_points = 1
 
+        # NEW: Tie-Breaker Logic
         if current_target_best_sim > overall_best_sim:
             overall_best_sim = current_target_best_sim
             overall_best_word = current_target_best_word
             overall_points = current_points
+        elif current_target_best_sim == overall_best_sim and current_target_best_sim > 0:
+            # If two targets have the same score, prefer the one with MORE words
+            if current_target_best_word and overall_best_word:
+                if len(current_target_best_word.split()) > len(overall_best_word.split()):
+                    overall_best_word = current_target_best_word
+                    overall_points = current_points
 
     return overall_best_word, overall_best_sim, overall_points
 
@@ -229,7 +253,12 @@ def main():
         status_msg = "OK"
 
         if found and target:
-            is_forbidden, forbidden_word_found = check_forbidden(raw_forbidden, actual_raw)
+            # NEW: Run find_best_match FIRST to see if the child hit a target
+            match_word, similarity, points = find_best_match(target, actual_raw, SCORING_MODE)
+            
+            # Pass the successfully matched word to check_forbidden so it can be ignored
+            ignore_word = match_word if points > 0 else None
+            is_forbidden, forbidden_word_found = check_forbidden(raw_forbidden, actual_raw, ignore_word)
             
             if is_forbidden:
                 points = 0
@@ -237,8 +266,6 @@ def main():
                 ist_display = f"FORBIDDEN: {forbidden_word_found}"
                 status_msg = "FORBIDDEN"
             else:
-                match_word, similarity, points = find_best_match(target, actual_raw, SCORING_MODE)
-                
                 if match_word:
                     ist_display = match_word
                 else:
@@ -280,11 +307,11 @@ def main():
     
     try:
         df_result.to_excel(OUTPUT_FILE, index=False)
-        print(f"\n Successfully saved to: {OUTPUT_FILE}")
+        print(f"\n Erfolgreich gespeichert als: {OUTPUT_FILE}")
     except Exception as e:
-        print(f"\n Error saving file: {e}")
+        print(f"\n Fehler beim Speichern: {e}")
 
-    input("\n Done. Press ENTER to close...")
+    input("\n Fertig. Drücke ENTER zum Schließen...")
 
 if __name__ == "__main__":
     main()
