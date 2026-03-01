@@ -144,7 +144,6 @@ def find_best_match(target_input, actual, mode):
                 else:
                     current_sim = SequenceMatcher(None, t_clean, w_clean).ratio() * 100
                     
-                    # ZUSATZ-SICHERHEIT: Der "Sherlock-Holmes-Türsteher"
                     if current_sim >= 70 and current_sim < 85:
                         if t_clean[:3] != w_clean[:3]:
                             current_sim = 0.0 
