@@ -2,9 +2,8 @@
 TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
 Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist & Multi-Word (Turkish Edition v3)
+Add-on: Blacklist & Multi-Word (Edition v4 with language toggle)
 """
-
 import pandas as pd
 import re
 import os
@@ -21,10 +20,9 @@ TRANSCRIPT_FOLDER = Path("./transcripts")
 EXCEL_FILE = "Solutions_BLCK.xlsx"
 OUTPUT_FILE = "Grading_Results_BLCK_TR.xlsx"
 SCORING_MODE = "fuzzy"
-# Tolerance: 0.75 allows for typos/letter swaps
-FUZZY_THRESHOLD = 0.75 
 
-# Language toggle: "DE" for German, "TR" for Turkish
+# Threshold = 70%
+FUZZY_THRESHOLD = 0.70 
 EVALUATION_LANGUAGE = "TR" 
 
 # ==========================================
@@ -33,26 +31,22 @@ EVALUATION_LANGUAGE = "TR"
 
 def print_banner():
     print("="*50)
-    print("   TRANSCRIPT EVALUATOR (TURKISH EDITION v3)")
+    print("   TRANSCRIPT EVALUATOR (TURKISH EDITION ULTIMATE)")
     print("="*50)
     print(f" Transcript Folder: {TRANSCRIPT_FOLDER}")
     print(f" Solutions File:    {EXCEL_FILE}")
-    print(f" Grading Mode:      {SCORING_MODE}")
     print(f" Language:          {EVALUATION_LANGUAGE}")
+    print(f" Threshold:         {FUZZY_THRESHOLD}")
     print("="*50 + "\n")
 
 def clean_text(text):
-    if not isinstance(text, str):
-        return ""
-    
+    if not isinstance(text, str): return ""
     if EVALUATION_LANGUAGE == "TR":
         text = text.replace("I", "ı").replace("İ", "i")
-        
     text = text.lower().strip()
     text = text.replace("ß", "ss")
     text = re.sub(r'[^\w\säöüçğış]', '', text, flags=re.IGNORECASE)
-    text = ' '.join(text.split())
-    return text
+    return ' '.join(text.split())
 
 def check_forbidden(forbidden_input, actual_text, matched_word=None, matched_target=None):
     if pd.isna(forbidden_input) or str(forbidden_input).strip() == "":
@@ -69,7 +63,6 @@ def check_forbidden(forbidden_input, actual_text, matched_word=None, matched_tar
         found_in_transcript = False
         count_in_transcript = 0
         
-        # Count occurrences in transcript
         if " " in clean_f:
             padded_transcript = f" {clean_transcript} "
             padded_f = f" {clean_f} "
@@ -82,7 +75,6 @@ def check_forbidden(forbidden_input, actual_text, matched_word=None, matched_tar
                 count_in_transcript = transcript_words.count(clean_f)
                 
         if found_in_transcript:
-            # Check for false alarm: Is the forbidden word entirely part of our target match?
             if matched_word and matched_target:
                 clean_match = clean_text(matched_word)
                 clean_target = clean_text(matched_target)
@@ -96,7 +88,6 @@ def check_forbidden(forbidden_input, actual_text, matched_word=None, matched_tar
                     match_words_list = clean_match.split()
                     count_in_match = match_words_list.count(clean_f)
                     
-                # NEW SAFETY CHECK: The forbidden word must actually be part of the TARGET
                 is_in_target = False
                 if " " in clean_f:
                     padded_target = f" {clean_target} "
@@ -107,11 +98,9 @@ def check_forbidden(forbidden_input, actual_text, matched_word=None, matched_tar
                     if clean_f in clean_target.split():
                         is_in_target = True
                         
-                # If it only appears inside the matched phrase AND belongs to the official target phrase
                 if count_in_transcript > 0 and (count_in_transcript == count_in_match) and is_in_target:
-                    continue # False alarm (e.g. "bıçak" inside "çatal bıçak"), skip to next forbidden word!
+                    continue 
                     
-            # If we reach here, it's a REAL forbidden word!
             return True, f_word
             
     return False, None
@@ -125,7 +114,6 @@ def find_best_match(target_input, actual, mode):
     overall_best_target = None
 
     actual_words_orig = actual.split()
-    
     if not actual_words_orig:
         return None, 0, 0, None
 
@@ -140,8 +128,7 @@ def find_best_match(target_input, actual, mode):
         n_grams = []
         if target_len > 0 and len(actual_words_orig) >= target_len:
             for i in range(len(actual_words_orig) - target_len + 1):
-                n_gram_orig = " ".join(actual_words_orig[i:i+target_len])
-                n_grams.append(n_gram_orig)
+                n_grams.append(" ".join(actual_words_orig[i:i+target_len]))
         else:
             n_grams = [" ".join(actual_words_orig)]
 
@@ -151,13 +138,16 @@ def find_best_match(target_input, actual, mode):
             
             if mode == "strict":
                 current_sim = 100.0 if t_clean == w_clean else 0.0
-            elif mode == "contains":
-                current_sim = 100.0 if t_clean in w_clean else 0.0
             elif mode == "fuzzy":
                 if t_clean in w_clean:
                     current_sim = 100.0
                 else:
                     current_sim = SequenceMatcher(None, t_clean, w_clean).ratio() * 100
+                    
+                    # ZUSATZ-SICHERHEIT: Der "Sherlock-Holmes-Türsteher"
+                    if current_sim >= 70 and current_sim < 85:
+                        if t_clean[:3] != w_clean[:3]:
+                            current_sim = 0.0 
             
             if current_sim > current_target_best_sim:
                 current_target_best_sim = current_sim
@@ -167,8 +157,9 @@ def find_best_match(target_input, actual, mode):
         if current_target_best_sim >= (FUZZY_THRESHOLD * 100):
             current_points = 1
         
+        # Strengere Regel für kurze Wörter
         if len(t_clean) <= 3:
-            if current_target_best_sim < 85: 
+            if current_target_best_sim < 90: 
                  current_points = 0
             else:
                  current_points = 1
@@ -287,7 +278,6 @@ def main():
         if found and target:
             match_word, similarity, points, matched_target_str = find_best_match(target, actual_raw, SCORING_MODE)
             
-            # Neu: Wir übergeben das exakte Target an die Check-Funktion, um Falschmeldungen abzugleichen
             is_forbidden, forbidden_word_found = check_forbidden(
                 raw_forbidden, 
                 actual_raw, 
