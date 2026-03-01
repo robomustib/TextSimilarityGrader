@@ -2,13 +2,7 @@
 TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
 Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist & Multi-Word (Turkish Edition v3 - Final Count Logic)
-"""
-"""
-TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
-Copyright (c) 2026 Mustafa Bilgin
-Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist & Multi-Word (Turkish Edition v3 - Final Count Logic)
+Add-on: Blacklist & Multi-Word (Turkish Edition v3)
 """
 
 import pandas as pd
