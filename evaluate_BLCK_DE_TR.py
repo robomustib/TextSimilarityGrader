@@ -2,13 +2,7 @@
 TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
 Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist & Multi-Word (Edition v4 with language toggle)
-"""
-"""
-TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
-Copyright (c) 2026 Mustafa Bilgin
-Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-Add-on: Blacklist & Multi-Word (Edition DE/TR - Final Transcription Tolerant)
+Add-on: Blacklist & Multi-Word (DE/TR)
 """
 
 import pandas as pd
@@ -31,7 +25,7 @@ SCORING_MODE = "fuzzy"
 # Threshold = 70%
 FUZZY_THRESHOLD = 0.70 
 
-# Sprachschalter: "DE" für Deutsch, "TR" für Türkisch
+# Language toggle: "DE" for German, "TR" for Turkish
 EVALUATION_LANGUAGE = "TR" 
 
 # ==========================================
@@ -161,6 +155,7 @@ def find_best_match(target_input, actual, mode):
         if current_target_best_sim >= (FUZZY_THRESHOLD * 100):
             current_points = 1
         
+        # Stricter rule for short words
         if len(t_clean) <= 3:
             if current_target_best_sim < 90: 
                  current_points = 0
@@ -227,8 +222,8 @@ def main():
     print_banner()
     
     if not os.path.exists(EXCEL_FILE):
-        print(f" ERROR: Datei '{EXCEL_FILE}' nicht gefunden!")
-        input("\nDrücke ENTER zum Beenden...")
+        print(f" ERROR: File '{EXCEL_FILE}' not found!")
+        input("\nPress ENTER to exit...")
         return
 
     try:
@@ -246,11 +241,11 @@ def main():
 
     except Exception as e:
         print(f" Excel Error: {e}")
-        input("\nDrücke ENTER...")
+        input("\nPress ENTER to exit...")
         return
 
     results = []
-    print(f" Starte Auswertung für {len(df)} Einträge...\n")
+    print(f" Starting evaluation for {len(df)} entries...\n")
 
     for index, row in df.iterrows():
         raw_filename = str(row["Filename"]).strip()
@@ -337,7 +332,7 @@ def main():
         df_result.to_excel(OUTPUT_FILE, index=False)
         print(f"\n Successfully saved as: {OUTPUT_FILE}")
     except Exception as e:
-        print(f"\n Saving error: {e}")
+        print(f"\n Error saving file: {e}")
 
     input("\n Done. Press ENTER to close...")
 
