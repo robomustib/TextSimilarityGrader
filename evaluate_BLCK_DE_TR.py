@@ -4,6 +4,13 @@ Copyright (c) 2026 Mustafa Bilgin
 Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 Add-on: Blacklist & Multi-Word (Edition v4 with language toggle)
 """
+"""
+TextSimilarityGrader (https://github.com/robomustib/TextSimilarityGrader/)
+Copyright (c) 2026 Mustafa Bilgin
+Licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Add-on: Blacklist & Multi-Word (Edition DE/TR - Final Transcription Tolerant)
+"""
+
 import pandas as pd
 import re
 import os
@@ -18,11 +25,13 @@ from difflib import SequenceMatcher
 
 TRANSCRIPT_FOLDER = Path("./transcripts")
 EXCEL_FILE = "Solutions_BLCK.xlsx"
-OUTPUT_FILE = "Grading_Results_BLCK_TR.xlsx"
+OUTPUT_FILE = "Grading_Results_BLCK.xlsx"
 SCORING_MODE = "fuzzy"
 
 # Threshold = 70%
 FUZZY_THRESHOLD = 0.70 
+
+# Sprachschalter: "DE" für Deutsch, "TR" für Türkisch
 EVALUATION_LANGUAGE = "TR" 
 
 # ==========================================
@@ -31,7 +40,7 @@ EVALUATION_LANGUAGE = "TR"
 
 def print_banner():
     print("="*50)
-    print("   TRANSCRIPT EVALUATOR (TURKISH EDITION ULTIMATE)")
+    print("   TRANSCRIPT EVALUATOR (DE/TR FINAL EDITION)")
     print("="*50)
     print(f" Transcript Folder: {TRANSCRIPT_FOLDER}")
     print(f" Solutions File:    {EXCEL_FILE}")
@@ -143,10 +152,6 @@ def find_best_match(target_input, actual, mode):
                     current_sim = 100.0
                 else:
                     current_sim = SequenceMatcher(None, t_clean, w_clean).ratio() * 100
-                    
-                    if current_sim >= 70 and current_sim < 85:
-                        if t_clean[:3] != w_clean[:3]:
-                            current_sim = 0.0 
             
             if current_sim > current_target_best_sim:
                 current_target_best_sim = current_sim
@@ -156,7 +161,6 @@ def find_best_match(target_input, actual, mode):
         if current_target_best_sim >= (FUZZY_THRESHOLD * 100):
             current_points = 1
         
-        # Strengere Regel für kurze Wörter
         if len(t_clean) <= 3:
             if current_target_best_sim < 90: 
                  current_points = 0
@@ -331,11 +335,11 @@ def main():
     
     try:
         df_result.to_excel(OUTPUT_FILE, index=False)
-        print(f"\n Erfolgreich gespeichert als: {OUTPUT_FILE}")
+        print(f"\n Successfully saved as: {OUTPUT_FILE}")
     except Exception as e:
-        print(f"\n Fehler beim Speichern: {e}")
+        print(f"\n Saving error: {e}")
 
-    input("\n Fertig. Drücke ENTER zum Schließen...")
+    input("\n Done. Press ENTER to close...")
 
 if __name__ == "__main__":
     main()
