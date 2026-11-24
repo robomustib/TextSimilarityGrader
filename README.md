@@ -117,6 +117,24 @@ Creates a pre-filled Solutions.xlsx.
    bash
    python evaluate.py
 ```
+
+## Sensitivity Analysis
+
+`sensitivity_analysis.py` re-grades all transcripts with the unchanged logic of
+`evaluate_BLCK_DE_TR.py` for tolerance values from 0 % to 50 % (step 5 %) and
+compares each run with a human reference rating. For every tolerance it reports
+false negatives, false positives, total deviations, raw agreement and Cohen's
+kappa per language and overall. The rule for targets with at most three
+characters (minimum similarity 90 %) is not varied.
+
+```bash
+python sensitivity_analysis.py <input.xlsx> --col-transcript <col> \
+    --col-target <col> --col-forbidden <col> --col-gold <col> --col-language <col>
+```
+
+Results are saved to `Sensitivity_Results.xlsx` (sheets "Summary" and "Items").
+
+
 ## Flowchart
 <img src="https://github.com/robomustib/TextSimilarityGrader/blob/main/img/Simplified_Data_Flow.svg" alt="Flowchart of TextSimilarityGrader" width="50%"/>
 
